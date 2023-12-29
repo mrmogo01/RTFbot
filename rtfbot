@@ -1,0 +1,43 @@
+
+import asyncio
+from aiogram import Bot, Dispatcher, types
+import os
+from google.cloud import dialogflow
+from google.cloud.dialogflow_v2 import SessionsClient
+import logging
+
+# Установка переменных окружения для Dialogflow
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r"C:\Games\small-talk"
+DIALOGFLOW_PROJECT_ID = "small-talk-kbr9"
+
+# Инициализация бота
+bot = Bot(token="6824744749:AAFv1mwZnsPiNI7CWu9yOz_UFjf1u_pJJHk")
+
+# Инициализация диспетчера
+dp = Dispatcher(bot)
+
+# Инициализация клиента Dialogflow
+dialogflow_session_client = SessionsClient()
+DIALOGFLOW_LANGUAGE_CODE = 'ru-RU'
+
+# Настройка логгирования
+logging.basicConfig(level=logging.INFO)
+
+# Обработчик команды /start
+@dp.message_handler(commands=['start'])
+async def handle_start(message: types.Message):
+    await message.answer("Привет! Я готов отвечать на твои вопросы.")
+
+# Обработчик всех остальных сообщений
+@dp.message_handler()
+async def handle_message(message: types.Message):
+    session = f"projects/{DIALOGFLOW_PROJECT_ID}/agent/sessions/{message.chat.id}"
+    text_input = dialogflow.TextInput(text=message.text, language_code=DIALOGFLOW_LANGUAGE_CODE)
+    query_input = dialogflow.QueryInput(text=text_input)
+    response = dialogflow_session_client.detect_intent(request={"session": session, "query_input": query_input})
+
+    await message.answer(response.query_result.fulfillment_text)
+
+# Запуск бота
+if __name__ == '__main__':
+    asyncio.run(dp.start_polling())
