@@ -1,5 +1,5 @@
 
-import asyncio
+import telebot
 from aiogram import Bot, Dispatcher, types
 import os
 from google.cloud import dialogflow
@@ -38,6 +38,185 @@ async def handle_message(message: types.Message):
 
     await message.answer(response.query_result.fulfillment_text)
 
-# Запуск бота
-if __name__ == '__main__':
-    asyncio.run(dp.start_polling())
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    start_button = types.KeyboardButton("Начать")
+    markup.add(start_button)
+
+    bot.reply_to(message, "Привет, участники викторины 👋\n\n"
+                          "Сегодня мы празднуем день рождения нашего любимого института - "
+                          "ИРИТ-РТФ! И в честь этого события мы подготовили для вас увлекательную квиз-викторину.\n"
+                          "Правила просты: с 13:00 до 15:00 вам нужно будет ответить на различные вопросы о "
+                          "<b>ИРИТ-РТФ</b>, его истории и достижениях, а также о космосе и о мире IT.\n"
+                          "Удачи вам в прохождении квиза и пусть победит самый умный и знающий! ☘",
+                 parse_mode='HTML',
+                 reply_markup=markup
+                 )
+
+
+registered_users = set()  # Создаем множество для отслеживания зарегистрированных пользователей
+
+@bot.message_handler(func=lambda message: True)
+def echo_all(message):
+    global registered_users
+
+    if message.from_user.id in registered_users:
+        return  # Просто выходим из функции, если пользователь уже зарегистрирован
+
+    if message.text == "Начать":
+        current_time = datetime.now()
+        quiz_start_time = datetime(current_time.year, 2, 1, 13, 0)  # 21 февраля, 13:00
+        quiz_end_time = datetime(current_time.year, 2, 21, 15, 0)  # 21 февраля, 15:00
+
+        if quiz_start_time <= current_time <= quiz_end_time:
+            if not is_user_registered(message.from_user.id):
+                bot.reply_to(message, "Викторина началась! Отправьте свое ФИО.")
+                registered_users.add(message.from_user.id)  # Добавляем пользователя в множество зарегистрированных
+                # Убираем клавиатуру после нажатия кнопки "Начать"
+                bot.register_next_step_handler(message, process_name_step)
+            else:
+                bot.reply_to(message, "Вы уже зарегистрированы для участия в викторине.")
+        else:
+            bot.reply_to(message, "Дождитесь начала викторины")
+
+
+def process_name_step(message):
+    global user_data
+    user_data = {"ID": message.from_user.id, "ФИО": message.text}
+    bot.reply_to(message, "Введите ссылку на свой ВК.")
+    bot.register_next_step_handler(message, process_vk_step)
+
+
+def process_vk_step(message):
+    user_data["ВК"] = message.text
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    status_button_1 = types.KeyboardButton("Школьник")
+    status_button_2 = types.KeyboardButton("Студент")
+    markup.add(status_button_1, status_button_2)
+    bot.reply_to(message, "Выберите свой статус:", reply_markup=markup)
+    bot.register_next_step_handler(message, process_status_step)
+
+
+def process_status_step(message):
+    user_data["Статус"] = message.text
+    user_data["Количество баллов"] = 0
+    bot.reply_to(message, "Введите кодовое слово:")
+    bot.register_next_step_handler(message, process_secret_step)
+
+
+def process_secret_step(message):
+    global user_data, question_timers
+    secret_word = "РТФ"
+    if message.text.strip() == secret_word:
+        save_to_excel(user_data)
+        bot.reply_to(message, "Спасибо, данные сохранены!")
+        question_timers[message.chat.id] = time.time()  # Сохраняем время начала викторины для данного пользователя
+        send_question(message)
+    else:
+        bot.reply_to(message, "Неверное кодовое слово! Попробуйте снова.")
+        bot.register_next_step_handler(message, process_secret_step)
+
+
+
+def save_to_excel(user_data):
+    wb = openpyxl.load_workbook("participants.xlsx")
+    ws = wb.active
+    ws.append([user_data["ID"], user_data["ФИО"], user_data["ВК"], user_data["Статус"], user_data["Количество баллов"]])
+    wb.save("participants.xlsx")
+
+
+def is_user_registered(user_id):
+    wb = openpyxl.load_workbook("participants.xlsx")
+    ws = wb.active
+    for row in ws.iter_rows(values_only=True):
+        if row[0] == user_id:
+            return True
+    return False
+
+
+def send_question(message):
+    send_next_question(message, 0)
+
+
+def send_next_question(message, question_index):
+    if question_index < len(questions):
+        question = questions[question_index]
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+
+        # Если вопрос не содержит вариантов ответа, создаем разметку без кнопок
+        if "options" not in question:
+            sent_message = bot.send_message(message.chat.id, f'Вопрос {question_index + 1}: {question["question"]}', reply_markup=markup)
+            bot.register_next_step_handler(sent_message, lambda m, q=question_index: check_answer_text(m, q, sent_message.message_id))
+        else:
+            options = [types.KeyboardButton(option) for option in question["options"]]
+            markup.add(*options)
+            if "photo" in question:
+                photo_path = question["photo"]
+                with open(photo_path, 'rb') as photo:
+                    sent_message = bot.send_photo(message.chat.id, photo, caption=f'Вопрос {question_index + 1}: {question["question"]}', reply_markup=markup)
+                    bot.register_next_step_handler(sent_message, lambda m, q=question_index: check_answer(m, q, sent_message.message_id))
+            else:
+                sent_message = bot.send_message(message.chat.id, f'Вопрос {question_index + 1}: {question["question"]}', reply_markup=markup)
+                bot.register_next_step_handler(sent_message, lambda m, q=question_index: check_answer(m, q, sent_message.message_id))
+
+        question_timers[message.chat.id] = time.time()
+    else:
+        bot.send_message(message.chat.id, "Викторина завершена! Спасибо за участие.")
+
+def check_time(message):
+    global question_timers
+    user_id = message.chat.id
+    current_time = time.time()
+    if user_id in question_timers:
+        elapsed_time = current_time - question_timers[user_id]
+        if elapsed_time >= 60:  # Проверяем, прошла ли минута (60 секунд)
+            bot.send_message(user_id, "Время вышло. Спасибо за прохождение!")
+            # Удаляем последний вопрос и кнопки ответов
+            bot.delete_message(user_id, message.message_id)
+            bot.delete_message(user_id, message.message_id - 1)
+            del question_timers[user_id]  # Удаляем время для данного пользователя
+            return True
+    return False
+
+def check_answer(message, question_index, question_message_id):
+    if check_time(message):  # Проверяем время перед обработкой ответа
+        return
+    user_answer = message.text
+    correct_index = questions[question_index]["correct_index"]
+    scores = questions[question_index]["scores"]
+    if user_answer == questions[question_index]["options"][correct_index]:
+        user_data["Количество баллов"] += scores[correct_index]
+    bot.delete_message(message.chat.id, question_message_id)
+    bot.delete_message(message.chat.id, message.message_id)
+    update_score_in_excel(user_data["ID"], user_data["Количество баллов"])
+    send_next_question(message, question_index + 1)
+
+def check_answer_text(message, question_index, question_message_id):
+    if check_time(message):  # Проверяем время перед обработкой ответа
+        return
+    user_answer = message.text.lower()  # Приводим ответ к нижнему регистру для сравнения
+    correct_answer = questions[question_index]["correct_answer"].lower()  # Приводим правильный ответ к нижнему регистру для сравнения
+    scores = questions[question_index]["scores"]
+
+    if user_answer == correct_answer:
+        user_data["Количество баллов"] += scores
+    bot.delete_message(message.chat.id, question_message_id)
+    bot.delete_message(message.chat.id, message.message_id)
+    update_score_in_excel(user_data["ID"], user_data["Количество баллов"])
+    send_next_question(message, question_index + 1)
+def update_score_in_excel(user_id, new_score):
+    wb = openpyxl.load_workbook("participants.xlsx")
+    ws = wb.active
+    row_index = 0
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=1, values_only=True):
+        row_index += 1
+        if row[0] == user_id:
+            # Update the score in the fifth column (index 5 corresponds to column E)
+            cell = ws.cell(row=row_index + 1, column=5)
+            cell.value = new_score
+            break
+    wb.save("participants.xlsx")
+
+
+bot.polling()
