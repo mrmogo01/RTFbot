@@ -1,5 +1,6 @@
 import logging
 from aiogram import Bot, Dispatcher, executor, types
+import difflib
 
 API_TOKEN = '6986827387:AAFq38U-MEzy9sw1hPBuH50NRmKFjDFAMSM'
 
@@ -16,6 +17,9 @@ qa_pairs = {
     "Как дела?": "У меня всё отлично, спасибо!",
     # Добавьте свои собственные вопросы и ответы
 }
+
+# Порог сходства для предполагаемого ответа (в процентах)
+SIMILARITY_THRESHOLD = 70
 
 
 @dp.message_handler(commands=['start'])
@@ -49,7 +53,12 @@ async def respond_to_message(message: types.Message):
         if message.text in qa_pairs:
             await message.answer(qa_pairs[message.text])
         else:
-            await message.answer("Извините, я не знаю ответ на этот вопрос.")
+            # Проверяем сходство вопроса пользователя с обученными данными
+            most_similar_question = difflib.get_close_matches(message.text, qa_pairs.keys(), n=1, cutoff=SIMILARITY_THRESHOLD / 100)
+            if most_similar_question:
+                await message.answer(qa_pairs[most_similar_question[0]])
+            else:
+                await message.answer("Извините, я не знаю ответ на этот вопрос.")
     else:
         await message.answer("Пожалуйста, активируйте режим ИИ, чтобы задавать вопросы.")
 
