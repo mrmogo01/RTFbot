@@ -25,8 +25,8 @@ SIMILARITY_THRESHOLD = 70
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    button1 = types.KeyboardButton("Button 1")
-    button2 = types.KeyboardButton("Button 2")
+    button1 = types.KeyboardButton("ИИ")
+    button2 = types.KeyboardButton("Профсоюз")
     markup.add(button1, button2)
     await message.answer("Привет! Я твой Telegram бот.", reply_markup=markup)
 
@@ -59,8 +59,6 @@ async def respond_to_message(message: types.Message):
                 await message.answer(qa_pairs[most_similar_question[0]])
             else:
                 await message.answer("Извините, я не знаю ответ на этот вопрос.")
-    else:
-        await message.answer("Пожалуйста, активируйте режим ИИ, чтобы задавать вопросы.")
 
 
 if __name__ == '__main__':
