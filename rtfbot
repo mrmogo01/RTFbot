@@ -1,6 +1,11 @@
 import logging
 from aiogram import Bot, Dispatcher, executor, types
-import difflib
+from fuzzywuzzy import process
+import re
+from sqlalchemy import create_engine, Column, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import Text
 
 API_TOKEN = '6986827387:AAFq38U-MEzy9sw1hPBuH50NRmKFjDFAMSM'
 
@@ -11,12 +16,23 @@ dp = Dispatcher(bot)
 
 # Глобальная переменная для хранения состояния режима ИИ
 is_ai_mode_on = False
+# Подключаемся к базе данных SQLite
+engine = create_engine('sqlite:///bot.db')
+Base = declarative_base()
+
+# Объявляем класс для таблицы обучаемых данных
+class QAPair(Base):
+    __tablename__ = 'qa_pairs'
+    question = Column(String, primary_key=True)
+    answer = Column(Text)
+
+# Создаем таблицу, если она еще не существует
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+session = Session()
+
 # Словарь для хранения обучаемых вопросов и ответов
-qa_pairs = {
-    "Привет": "Привет! Чем могу помочь?",
-    "Как дела?": "У меня всё отлично, спасибо!",
-    # Добавьте свои собственные вопросы и ответы
-}
+qa_pairs = {pair.question: pair.answer for pair in session.query(QAPair).all()}
 
 # Порог сходства для предполагаемого ответа (в процентах)
 SIMILARITY_THRESHOLD = 70
@@ -31,18 +47,38 @@ async def send_welcome(message: types.Message):
     await message.answer("Привет! Я твой Telegram бот.", reply_markup=markup)
 
 
-@dp.message_handler(lambda message: message.text == "Button 1")
+@dp.message_handler(lambda message: message.text == "ИИ")
 async def turn_on_ai_mode(message: types.Message):
     global is_ai_mode_on
     is_ai_mode_on = True
     await message.answer("Режим ИИ активирован. Теперь я могу отвечать на вопросы.")
 
 
-@dp.message_handler(lambda message: message.text == "Button 3")
+@dp.message_handler(lambda message: message.text == "Профсоюз")
 async def turn_off_ai_mode(message: types.Message):
     global is_ai_mode_on
     is_ai_mode_on = False
     await message.answer("Режим ИИ деактивирован.")
+
+
+@dp.message_handler(commands=['train'])
+async def train_bot(message: types.Message):
+    global qa_pairs
+    try:
+        # Используем регулярное выражение для разбора текста команды
+        match = re.match(r'/train\s+(.+?):\s+(.+)', message.text)
+        if match:
+            question = match.group(1).strip()
+            answer = match.group(2).strip()
+            qa_pair = QAPair(question=question, answer=answer)
+            session.add(qa_pair)
+            session.commit()
+            qa_pairs[question] = answer
+            await message.answer("Бот успешно обучен на новом вопросе и ответе.")
+        else:
+            await message.answer("Что-то пошло не так. Убедитесь, что вы ввели команду в правильном формате.")
+    except Exception as e:
+        await message.answer("Что-то пошло не так. Убедитесь, что вы ввели команду в правильном формате.")
 
 
 @dp.message_handler()
@@ -54,9 +90,9 @@ async def respond_to_message(message: types.Message):
             await message.answer(qa_pairs[message.text])
         else:
             # Проверяем сходство вопроса пользователя с обученными данными
-            most_similar_question = difflib.get_close_matches(message.text, qa_pairs.keys(), n=1, cutoff=SIMILARITY_THRESHOLD / 100)
-            if most_similar_question:
-                await message.answer(qa_pairs[most_similar_question[0]])
+            most_similar_question, similarity = process.extractOne(message.text, qa_pairs.keys())
+            if similarity >= SIMILARITY_THRESHOLD:
+                await message.answer(qa_pairs[most_similar_question])
             else:
                 await message.answer("Извините, я не знаю ответ на этот вопрос.")
 
