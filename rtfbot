@@ -31,6 +31,8 @@ Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 session = Session()
 
+
+
 # Словарь для хранения обучаемых вопросов и ответов
 qa_pairs = {pair.question: pair.answer for pair in session.query(QAPair).all()}
 
