@@ -2,7 +2,7 @@ import logging
 from aiogram import Bot, Dispatcher, executor, types
 from fuzzywuzzy import process
 import re
-from sqlalchemy import create_engine, Column, String
+from sqlalchemy import create_engine, Column, String, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import Text
@@ -26,12 +26,31 @@ class QAPair(Base):
     question = Column(String, primary_key=True)
     answer = Column(Text)
 
+class RegistrationData(Base):
+    __tablename__ = 'registration_data'
+    id = Column(Integer, primary_key=True)
+    full_name = Column(String)
+    academic_group = Column(String)
+    study_form = Column(String)
+    payment_type = Column(String)
+    direction = Column(String)
+    course = Column(Integer)
+
 # Создаем таблицу, если она еще не существует
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 session = Session()
 
-
+REGISTRATION_STEPS = [
+    "Введите ФИО:",
+    "Введите академическую группу:",
+    "Выберите форму обучения:",
+    "Выберите тип оплаты:",
+    "Введите направление:",
+    "Введите курс:"
+]
+current_step = 0
+registration_data = {}
 
 # Словарь для хранения обучаемых вопросов и ответов
 qa_pairs = {pair.question: pair.answer for pair in session.query(QAPair).all()}
@@ -39,8 +58,51 @@ qa_pairs = {pair.question: pair.answer for pair in session.query(QAPair).all()}
 # Порог сходства для предполагаемого ответа (в процентах)
 SIMILARITY_THRESHOLD = 70
 
-
 @dp.message_handler(commands=['start'])
+async def start(message: types.Message):
+    global current_step, registration_data
+    current_step = 0
+    registration_data = {}
+    await message.answer(REGISTRATION_STEPS[current_step])
+
+@dp.message_handler()
+async def register_data(message: types.Message):
+    global current_step, registration_data
+    registration_data[REGISTRATION_STEPS[current_step]] = message.text
+    if current_step < len(REGISTRATION_STEPS) - 1:
+        if current_step == 2:
+            await message.answer("Выберите форму обучения:", reply_markup=types.ReplyKeyboardMarkup(
+                keyboard=[
+                    [types.KeyboardButton("Бакалавриат"), types.KeyboardButton("Специалитет")]
+                ],
+                resize_keyboard=True
+            ))
+        elif current_step == 3:
+            await message.answer("Выберите тип оплаты:", reply_markup=types.ReplyKeyboardMarkup(
+                keyboard=[
+                    [types.KeyboardButton("Бюджет"), types.KeyboardButton("Контракт")]
+                ],
+                resize_keyboard=True
+            ))
+        current_step += 1
+        await message.answer(REGISTRATION_STEPS[current_step])
+    else:
+        save_to_database(registration_data)
+        await message.answer("Спасибо за регистрацию! Ваши данные были успешно сохранены.")
+
+def save_to_database(data):
+    registration = RegistrationData(
+        full_name=data["Введите ФИО:"],
+        academic_group=data["Введите академическую группу:"],
+        study_form=data["Выберите форму обучения:"],
+        payment_type=data["Выберите тип оплаты:"],
+        direction=data["Введите направление:"],
+        course=int(data["Введите курс:"])
+    )
+    session.add(registration)
+    session.commit()
+
+@dp.message_handler(commands=['uyyvyv'])
 async def send_welcome(message: types.Message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     button1 = types.KeyboardButton("ИИ")
