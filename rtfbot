@@ -36,6 +36,8 @@ class RegistrationData(Base):
     direction = Column(String)
     course = Column(Integer)
 
+
+
 # Создаем таблицу, если она еще не существует
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
@@ -65,30 +67,44 @@ async def start(message: types.Message):
     registration_data = {}
     await message.answer(REGISTRATION_STEPS[current_step])
 
+
 @dp.message_handler()
 async def register_data(message: types.Message):
     global current_step, registration_data
+    if REGISTRATION_STEPS[current_step] == "Выберите форму обучения:":
+        if message.text not in ["Бакалавриат", "Специалитет"]:
+            await message.answer("Пожалуйста, выберите один из вариантов: Бакалавриат, Специалитет")
+            return
+    elif REGISTRATION_STEPS[current_step] == "Выберите тип оплаты:":
+        if message.text not in ["Бюджет", "Контракт"]:
+            await message.answer("Пожалуйста, выберите один из вариантов: Бюджет, Контракт")
+            return
+
     registration_data[REGISTRATION_STEPS[current_step]] = message.text
-    if current_step < len(REGISTRATION_STEPS) - 1:
-        if current_step == 2:
+    current_step += 1
+
+    if current_step < len(REGISTRATION_STEPS):
+        await message.answer(REGISTRATION_STEPS[current_step])
+
+        if REGISTRATION_STEPS[current_step] == "Выберите форму обучения:":
             await message.answer("Выберите форму обучения:", reply_markup=types.ReplyKeyboardMarkup(
                 keyboard=[
                     [types.KeyboardButton("Бакалавриат"), types.KeyboardButton("Специалитет")]
                 ],
                 resize_keyboard=True
             ))
-        elif current_step == 3:
+        elif REGISTRATION_STEPS[current_step] == "Выберите тип оплаты:":
             await message.answer("Выберите тип оплаты:", reply_markup=types.ReplyKeyboardMarkup(
                 keyboard=[
                     [types.KeyboardButton("Бюджет"), types.KeyboardButton("Контракт")]
                 ],
                 resize_keyboard=True
             ))
-        current_step += 1
-        await message.answer(REGISTRATION_STEPS[current_step])
     else:
         save_to_database(registration_data)
         await message.answer("Спасибо за регистрацию! Ваши данные были успешно сохранены.")
+        await send_welcome(message)
+
 
 def save_to_database(data):
     registration = RegistrationData(
@@ -102,7 +118,7 @@ def save_to_database(data):
     session.add(registration)
     session.commit()
 
-@dp.message_handler(commands=['uyyvyv'])
+@dp.message_handler()
 async def send_welcome(message: types.Message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     button1 = types.KeyboardButton("ИИ")
