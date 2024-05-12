@@ -17,6 +17,7 @@ dp = Dispatcher(bot)
 
 # Глобальная переменная для хранения состояния режима ИИ
 is_ai_mode_on = False
+
 # Подключаемся к базе данных SQLite
 engine = create_engine('sqlite:///bot.db')
 Base = declarative_base()
