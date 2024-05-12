@@ -9,6 +9,7 @@ from sqlalchemy import Text
 
 API_TOKEN = '6986827387:AAFq38U-MEzy9sw1hPBuH50NRmKFjDFAMSM'
 
+
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=API_TOKEN)
