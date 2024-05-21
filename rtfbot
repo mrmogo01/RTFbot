@@ -83,6 +83,7 @@ async def register_data(message: types.Message):
             await message.answer("Пожалуйста, выберите один из вариантов: Бюджет, Контракт")
             return
 
+
     registration_data[REGISTRATION_STEPS[current_step]] = message.text
     current_step += 1
 
