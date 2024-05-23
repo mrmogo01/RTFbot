@@ -71,6 +71,7 @@ async def start(message: types.Message):
     await message.answer(REGISTRATION_STEPS[current_step])
 
 
+
 @dp.message_handler()
 async def register_data(message: types.Message):
     global current_step, registration_data
